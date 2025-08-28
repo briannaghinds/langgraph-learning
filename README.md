@@ -7,7 +7,6 @@ The purpose of this repo is to just document my learning of LangGraph and LangSm
 https://youtu.be/jGg_1h0qzaM?feature=shared
 - in this video I create the Agents the instructor does, then build off what I have to complete the video exercises
 
-
 ### Theory of LangGraph
 - **Typed Dictionary**: dictionary object that defines the data type for each key object, important for preventing KeyErrors and gives type saftey down the line when building complex systems.
 ```python
