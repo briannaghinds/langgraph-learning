@@ -1,6 +1,6 @@
 """
 This is a simple LLM bot, where it has no memory of past statements/conversations.
-This is the simpliest chat bot that can be made via LangGraph.
+This is the simpliest chat bot that can be made via LangGraph (no memory).
 
 GRAPH STRUCTURE
 Start -> Process Node -> End
@@ -43,7 +43,7 @@ workflow.add_edge("AI", END)
 chat_bot = workflow.compile()
 
 
-# get user input
+## MAIN ##
 if __name__ == "__main__":
     while True:
         user_input = input("Enter: ").lower()
