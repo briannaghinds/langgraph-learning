@@ -48,7 +48,17 @@ def add(a:int, b:int):
     """This is an addition function that adds 2 numbers together"""
     return a + b
 
-tools = [add]
+@tool
+def subtract(a:int, b:int):
+    """This is a subtracting function that subtracts 2 numbers together"""
+    return a - b
+
+@tool
+def multiply(a:int, b:int):
+    """This is a multiplication function that multiplies 2 numbers together"""
+    return a * b
+
+tools = [add, subtract, multiply]
 
 # define the model
 # temperture = 0 minimizes hallucination
@@ -108,5 +118,5 @@ def print_stream(stream):
 
 ## MAIN ##
 if __name__ == "__main__":
-    inputs = {"messages": [("user", "Add 40 + 12.")]}
+    inputs = {"messages": [("user", "Add 2 + 2 and then multiply that by 3.")]}
     print_stream(application.stream(inputs, stream_mode="values"))
