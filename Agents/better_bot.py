@@ -55,7 +55,7 @@ if __name__ == "__main__":
         conversation_history = result["messages"]
 
         # add user's input into the text file
-        with open("better_bot_memory.txt", "w") as memory:
+        with open("./Agents/better_bot_memory.txt", "w") as memory:
             memory.write("YOUR CONVERSATION LOG:\n")
             
             for message in conversation_history:
