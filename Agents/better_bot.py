@@ -24,7 +24,6 @@ def process(state: AgentState) -> AgentState:
     """This node will solve the request from the user's input"""
     response = llm.invoke(state["messages"])  # get the llms response to the user request
     state["messages"].append(AIMessage(content=response.content))  # append the new state
-
     print(f"AI: {response.content}")
 
     return state
@@ -43,11 +42,12 @@ chatbot = workflow.compile()
 if __name__ == "__main__":
     conversation_history = []
     print("Enter 'exit' or 'end' to exit the conversation.")
+
     while True:
-        user_input = input("You: ").lower()
+        user_input = input("You: ")
 
         # conversation_history.append(HumanMessage(content=user_input))
-        if user_input in ["exit", "end"]:
+        if user_input.lower() in ["exit", "end"]:
             break
 
         conversation_history.append(HumanMessage(content=user_input))
@@ -55,20 +55,15 @@ if __name__ == "__main__":
         conversation_history = result["messages"]
 
         # add user's input into the text file
-        with open("better_bot_memory.txt", "a") as memory:
+        with open("better_bot_memory.txt", "w") as memory:
             memory.write("YOUR CONVERSATION LOG:\n")
             
             for message in conversation_history:
-                if isinstance is HumanMessage:
+                if isinstance(message, HumanMessage):
                     memory.write(f"You: {message.content}")
-                elif isinstance is AIMessage:
+                elif isinstance(message, AIMessage):
                     memory.write(f"AI: {message.content}")
             memory.write("END OF CONVERSATION")
         print("~Conversation has been saved to better_bot_memory.txt")
-
-
-        # add user's input into the text file
-
-        # conversation_history = result["messages"]
 
     memory.close()
