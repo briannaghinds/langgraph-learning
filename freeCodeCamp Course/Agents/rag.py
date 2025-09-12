@@ -140,7 +140,26 @@ def call_llm(state: AgentState) -> AgentState:
 
 # define retriever agent
 def retriever_agent(state: AgentState) -> AgentState:
-    pass
+    """Execute tool calls from the LLM's response."""
+
+    tool_calls = state["messages"][-1].tool_calls
+    results = []
+    for t in tool_calls:
+        print(f"Calling Tools: {t['name']} with query {t['args'].get('query', 'No query provided.')}")
+
+        # check if a valid tool is preset
+        if not t["name"] in tools_dict:
+            print(f"Tool: {t['name']} does not exist.")
+            result = "Incorrect tool name, please retry and select a tool from the list of available tools."
+        else:
+            result = tools_dict[t["name"]].invoke(t["args"].get("query", ""))
+            print(f"Result length: {len(str(result))}")
+
+        # append the ToolMessage
+        results.append(ToolMessage(tool_call_id=t["id"], name=t["name"], content=str(result)))
+    
+    print("Tools Execution Complete. Back to the model!")
+    return {"messages": results}
 
 # initialize and build the graph and its nodes
 graph = StateGraph(AgentState)
@@ -161,7 +180,18 @@ rag_agent = graph.compile()
 
 # define a function to help run the agent workflow
 def running_agent():
-    pass
+    print("\n=== RAG AGENT ===")
+
+    while True:
+        user_input = input("\nWhat is your question: ")
+        if user_input.lower() in ["quit", "exit"]:
+            break
+
+        messages = [HumanMessage(content=user_input)]
+        result = rag_agent.invoke({"messages": messages})
+
+        print("\n=== ANSWER ===")
+        print(result["messages"][-1].content)
 
 ## MAIN ##
 if __name__ == "__main__":
