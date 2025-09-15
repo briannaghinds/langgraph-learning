@@ -12,7 +12,7 @@ def load_dataset(path: str) -> dict:
         path: string path to the dataset file
     """
 
-    # ROBUST CHECK #1
+    # ROBUST CHECK
     if not os.path.exists(path):
         return {"error": f"File not found at path {path}"}
     
@@ -40,9 +40,36 @@ def load_dataset(path: str) -> dict:
         return {"error": str(e)}    
     
 @tool
-def data_analysis(data: pd.DataFrame) -> dict:
+def data_analysis(data: dict) -> dict:
+    """
+    Perform simple descriptive statistics on numerical columns. 
+    Returns a dictionary object of statistics per column and any important analysis information.
+
+    Args
+        data: dictionary object of the dataset {"data": [...], "columns": [...]}
+    """
+
+    # ROBUST CHECK 
+    if "error" in data:
+        return data  # if error exists just send it back
+    
+    try:
+        df = pd.DataFrame(data["data"])
+    except Exception as e:
+        return {"error" : f"Error performing data analysis on dataset: {str(e)}"}
+
     pass
 
 @tool
-def data_visualization(data: pd.DataFrame) -> str:
-    pass
+def data_visualization(data: dict) -> str:
+    """
+    Generate graphs/charts for numeric columns.
+    Saves PNG(s) to ./graphs and returns a list of file paths to be called on by the report.
+
+    Args
+        data: dictionary object of the dataset
+    """
+    
+    # ROBUST CHECK
+    if "error" in data:
+        return data
