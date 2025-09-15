@@ -55,10 +55,28 @@ def data_analysis(data: dict) -> dict:
     
     try:
         df = pd.DataFrame(data["data"])
+
+        # give a five number summary, shape, other numerical values
+        stats = {}
+        stats["info"] = df.info()
+        stats["null_cols"] = df.isna().sum()
+
+        for col in df.select_dtypes(include=["number"]).columns:
+            stats[col] = {
+                "shape": df[col].shape,
+                "mean": df[col].mean(),
+                "median": df[col].median(),
+                "std": df[col].std(),
+                "min": df[col].min(),
+                "max": df[col].max(),
+                "count": int(df[col].count()) 
+            }
+
+        return {"stats": stats}
+
+
     except Exception as e:
         return {"error" : f"Error performing data analysis on dataset: {str(e)}"}
-
-    pass
 
 @tool
 def data_visualization(data: dict) -> str:
@@ -73,3 +91,15 @@ def data_visualization(data: dict) -> str:
     # ROBUST CHECK
     if "error" in data:
         return data
+    
+    try:
+        df = pd.DataFrame(data["data"])
+
+        # make a folder directory
+        os.makedirs("graphs", exist_ok=True)
+
+        paths = []
+        
+    except Exception as e:
+        return {"error": f"Error creating visualizations: {str(e)}"}
+
