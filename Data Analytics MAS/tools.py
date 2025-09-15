@@ -3,7 +3,7 @@ import pandas as pd
 from langchain_core.tools import tool
 
 @tool
-def load_dataset(path: str) -> pd.DataFrame:
+def load_dataset(path: str) -> dict:
     """
     Load a dataset from CSV, JSON, TXT, or XLSX into a Pandas Dataframe.
     Returns the loaded dataset, or None if an error occurs.
@@ -14,27 +14,30 @@ def load_dataset(path: str) -> pd.DataFrame:
 
     # ROBUST CHECK #1
     if not os.path.exists(path):
-        print("Error opening file. Check path definition.")
-        return None
+        return {"error": f"File not found at path {path}"}
     
     _, ext = os.path.splitext(path)
     ext = ext.lower()
 
     try:
         if ext == ".csv":
-            return pd.read_csv(path)
+            df = pd.read_csv(path)
         elif ext == ".json":
-            return pd.read_json(path)
+            df = pd.read_json(path)
         elif ext == ".txt":
-            return pd.read_csv(path, sep="\t", engine="python")
+            df = pd.read_csv(path, sep="\t", engine="python")
         elif ext == ".xlsx":
-            return pd.read_excel(path, engine="openpyxl")
+            df = pd.read_excel(path, engine="openpyxl")
         else:
-            print("File extension not supported. Convert and try again.")
-            return None
+            return {"error": f"Unsupported file extension: {ext}"}
+        
+        return {
+            "data": df.to_dict(orient="records"),
+            "columns": df.columns.tolist()
+        }
+    
     except Exception as e:
-        print(f"Error: File not found, {str(e)}.")
-        return None    
+        return {"error": str(e)}    
     
 @tool
 def data_analysis(data: pd.DataFrame) -> dict:
