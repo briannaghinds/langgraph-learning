@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from langchain_core.tools import tool
 
 @tool
-def load_dataset(path: str) -> dict:
+def load_dataset(data_path: str) -> dict:
     """
     Load a dataset from CSV, JSON, TXT, or XLSX into a Pandas Dataframe.
     Returns the loaded dataset, or None if an error occurs.
@@ -14,21 +14,22 @@ def load_dataset(path: str) -> dict:
     """
 
     # ROBUST CHECK
-    if not os.path.exists(path):
-        return {"error": f"File not found at path {path}"}
+    print(data_path)
+    if not os.path.exists(data_path):
+        return {"error": f"File not found at path {data_path}"}
     
-    _, ext = os.path.splitext(path)
+    _, ext = os.path.splitext(data_path)
     ext = ext.lower()
 
     try:
         if ext == ".csv":
-            df = pd.read_csv(path)
+            df = pd.read_csv(data_path)
         elif ext == ".json":
-            df = pd.read_json(path)
+            df = pd.read_json(data_path)
         elif ext == ".txt":
-            df = pd.read_csv(path, sep="\t", engine="python")
+            df = pd.read_csv(data_path, sep="\t", engine="python")
         elif ext == ".xlsx":
-            df = pd.read_excel(path, engine="openpyxl")
+            df = pd.read_excel(data_path, engine="openpyxl")
         else:
             return {"error": f"Unsupported file extension: {ext}"}
         
@@ -110,7 +111,7 @@ def data_visualization(data: dict) -> str:
             plt.xlabel(col)
             plt.ylabel("Frequency")
 
-            graph_path = f"./graphs{col}_hist.png"
+            graph_path = f"./graphs/{col}_hist.png"
             plt.savefig(graph_path)
             plt.close()
 

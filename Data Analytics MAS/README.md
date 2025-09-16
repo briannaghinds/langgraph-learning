@@ -10,3 +10,7 @@ This Multi-Agentic System (MAS) will be a data analytics system. Where the full 
 The agentic workflow is linear
 $$START -> DataLoader -> Analyst -> Visualization -> Supervisor -> END$$
 
+## Agentic Process Notes:
+- `bind_tools()` is benefical if there is more than 1 tool to use/the goal is for the agent to pick the best tool to use.
+    - in this case the data MAS is linear and only has one tool per agent, so instead of binding the tools the tools are directly called in the Agent methods
+
