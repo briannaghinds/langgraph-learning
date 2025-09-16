@@ -7,3 +7,6 @@ This Multi-Agentic System (MAS) will be a data analytics system. Where the full 
 - Visualization Agent -> produces graphs/visualizations and stores in a folder names   `./graphs`
 - Supervisor Agent -> stitches all the outputs together (data analysis + graphs) into a Markdown for a report
 
+The agentic workflow is linear
+$$START -> DataLoader -> Analyst -> Visualization -> Supervisor -> END$$
+
