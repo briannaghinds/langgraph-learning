@@ -2,7 +2,7 @@
 @author: Brianna Hinds
 Description: Describes/creates all the agents for the data analytics MAS.
 """
-from tools import *
+from tools import data_analysis, data_visualization, load_dataset
 from langchain_ollama import ChatOllama
 from typing import TypedDict
 from langgraph.graph import StateGraph, END
@@ -24,7 +24,7 @@ class AgentState(TypedDict):
     dataset_path: str
     dataset: dict
     analysis_results: dict
-    visualizations: list[str]
+    visualizations: dict
     final_report: str  # this will be a string in markdown format
 
 
@@ -33,28 +33,40 @@ def DataLoaderAgent(state: AgentState) -> AgentState:
     """Agent that loads the dataset."""
 
     # ask the loader_llm to call its tool
-    response = loader_llm.invoke(f"Load dataset from {state['dataset_path']}")
-
+    # response = loader_llm.invoke(f"Load dataset from {state['dataset_path']}")
+    response = loader_llm.invoke(
+         "Load the dataset from this path: " + state["dataset_path"]
+    )
     # response = tool output
     state["dataset"] = response    
     return state
 
 def AnalystAgent(state: AgentState) -> AgentState:
     """Agent that computes the stats, trends, outliers, in the data."""
-    response = analysis_llm.invoke("Analyze the dataset and return key statistics, facts, numbers, and anything that seems relevant.", input={"data": state['dataset']})
+    # response = analysis_llm.invoke("Analyze the dataset and return key statistics, facts, numbers, and anything that seems relevant.")
+    response = analysis_llm.invoke(
+        "Analyze this dataset: " + str(state["dataset"])
+    )
     state['analysis_results'] = response
     return state
 
 def VisualizationAgent(state: AgentState) -> AgentState:
     """Agent responsible for creating charts and data visualizations."""
-    response = visualization_llm.invoke("Generate visualizations of dataset trends, export the .png images into a folder name /graphs.", input={"data": state['dataset']})
+    # response = visualization_llm.invoke("Generate visualizations of dataset trends, export the .png images into a folder name /graphs.")
+    response = visualization_llm.invoke(
+        "Generate visualizations for this dataset: " + str(state["dataset"])
+    )
     state["visualizations"].append(response)
     return state
 
 def SupervisorAgent(state: AgentState) -> AgentState:
     """Supervisor agent orchestrates workflow & writes final report in markdown format."""
     
-    response = llm.invoke(f"Create a final markdown report from the agent's results. \nAnalysis: {state['analysis_results']}\nVisualizations: {state['visualizations']}")
+    analysis_text = str(state["analysis_results"])
+    viz_text = str(state["visualizations"])
+    response = llm.invoke(f"Create a final markdown report.\nAnalysis:\n{analysis_text}\n\nVisualizations:\n{viz_text}")
+
+    # response = llm.invoke(f"Create a final markdown report from the agent's results. \nAnalysis: {state['analysis_results']}\nVisualizations: {state['visualizations']}")
     state["final_report"] = response
     return state
 
@@ -94,3 +106,9 @@ if __name__ == "__main__":
     )
 
     print(result["final_report"])
+
+    # write to a markdown file
+    md_file = "final_MAS_report.md"
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write(str(result["final_report"]))
+    f.close()

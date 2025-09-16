@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
 from langchain_core.tools import tool
 
 @tool
@@ -98,7 +99,24 @@ def data_visualization(data: dict) -> str:
         # make a folder directory
         os.makedirs("graphs", exist_ok=True)
 
+        # list to add all the graph's path
         paths = []
+        for col in df.select_dtypes(include=["number"]).columns:
+            plt.figure()
+
+            # make histogram
+            df[col].hist(bins=20)
+            plt.title(f"Histogram of {col}")
+            plt.xlabel(col)
+            plt.ylabel("Frequency")
+
+            graph_path = f"./graphs{col}_hist.png"
+            plt.savefig(graph_path)
+            plt.close()
+
+            paths.append(graph_path)
+
+        return {"visualizations": paths}
         
     except Exception as e:
         return {"error": f"Error creating visualizations: {str(e)}"}
