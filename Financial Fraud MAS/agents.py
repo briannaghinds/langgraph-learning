@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import TypedDict
 from tools import *
+from langgraph.graph import StateGraph, END
+from IPython.display import Image, display
 
 # define llm
 load_dotenv()
@@ -29,8 +31,8 @@ supervisor_llm = llm  # the supervisor has no tools
 class AgentState(TypedDict):
     transaction_data_sources: list[str]  # there will be multiple sources (paths, utls, db connections, etc)
     transaction_data: dict  # unified list of transaction records
-    fraud_data: list[str]  # flagged anomalies/vulnerabilities
-    risk_report: str  # final summary/report
+    fraud_data: list[dict]  # flagged anomalies/vulnerabilities
+    risk_report: str  # final summary/report (output in pdf format and in json formats)
 
 
 # define agents
@@ -39,9 +41,29 @@ class AgentState(TypedDict):
 # initalize graph and its nodes
 
 
-# build graph
 
+# build graph
+workflow = StateGraph(AgentState)
+workflow.add_node("ingestion",)
+workflow.add_node()
+workflow.add_node()
+
+workflow.set_entry_point("ingestion")
+fraud_detector = workflow.compile()
+
+# visualize the graph
+# extra step, but this visualizes the graph we created in LangGraph
+display(Image(fraud_detector.get_graph().draw_mermaid_png()))
 
 ## MAIN ##
 if __name__ == "__main__":
-    pass
+    initial_state = {
+        "transaction_data_sources": [],
+        "transaction_data": {},
+        "fraud_data": [],
+        "risk_report": ""
+
+    }
+
+    result = fraud_detector.invoke(initial_state)
+    print(result["risk_report"])

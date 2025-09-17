@@ -8,11 +8,14 @@ import pandas as pd
 import requests
 import sqlite3
 import os
+import numpy as np
+from sklearn.ensemble import IsolationForest
+import xgboost as xgb
 
 ## INGESTION AGENT TOOLS ##
 # GOAL: loops until it has a complete dataset (transactions, users, metadata)
 @tool
-def load_csv(datapath: str) -> dict:
+def load_csv(datapath: str) -> dict:  # NOTE: need to fix because the csv files do not have the same column names
     """
     From a .csv define datapath, load the data into a Pandas DataFrame.
     Returns the loaded dataset, or None if an error occurs.
@@ -97,11 +100,35 @@ def query_database(db_path: str, query: str) -> dict:
 @tool
 def statistical_summary(data: dict) -> dict:
     """
-    Used to define a statistical summary of the financial data, condensing the large dataset into a more manageable form.
-    Returns a descriptive summary of the data.
+    Generates descriptive statistics for financial transaction data.
+    Provides high-level summary metrics (mean, median, standard deviation, etc.)
+    for each numerical column in the dataset.
 
-    Args
-        data: dictionary object of the data
+    Args:
+        data (dict): A dictionary containing the transaction data.
+                     Must include at least one numerical column (e.g., 'amount').
+
+    Returns:
+        dict: A dictionary with descriptive statistics:
+              - "description": Pandas-style summary (count, mean, std, min, quartiles, max).
+              - "<column_name>": Detailed stats for each numerical column (mean, median, std, sum, min, max).
+              Returns {"error": "..."} if parsing or analysis fails.
+
+    Example:
+        >>> statistical_summary({"data": [{"amount": 120.0}, {"amount": 75.5}, {"amount": 200.0}]})
+        {
+            "results": {
+                "description": {...},
+                "amount": {
+                    "mean": 131.83,
+                    "median": 120.0,
+                    "standard_deviation": 62.14,
+                    "sum": 395.5,
+                    "min": 75.5,
+                    "max": 200.0
+                }
+            }
+        }
     """
 
     # ROBUST CHECK
@@ -115,7 +142,7 @@ def statistical_summary(data: dict) -> dict:
         stats = {}
 
         # define a description column
-        stats["description"] = df.describe()
+        stats["description"] = df.describe().to_dict()  # the output needs to be JSON-serializable to prevent errors
         for col in df.select_dtypes(include=["number"]):
             stats[col] = {
                 "mean": df[col].mean(),
@@ -126,14 +153,40 @@ def statistical_summary(data: dict) -> dict:
                 "max": df[col].max()
             }
 
-        return {"stats": stats}
+        return {"results": stats}
     
     except Exception as e:
         return {"error": f"Issue reading DataFrame object: {str(e)}"}
 
 @tool
 def time_series_analysis(data: dict) -> dict:
-    """"""
+    """
+    Performs time series analysis on financial transaction data.
+    The function groups transaction amounts over different time windows (daily, weekly, monthly) 
+    to uncover trends and patterns in spending or transfers.
+
+    Args:
+        data (dict): A dictionary containing the transaction data. 
+                     Must include a 'date' column (transaction timestamp) 
+                     and an 'amount' column (transaction value).
+
+    Returns:
+        dict: A dictionary with aggregated transaction totals:
+              - "daily_transactions": Total transaction amounts per day.
+              - "weekly_transactions": Total transaction amounts per week.
+              - "monthly_transactions": Total transaction amounts per month.
+              Returns {"error": "..."} if parsing or analysis fails.
+
+    Example:
+        >>> time_series_analysis({"data": [{"date": "2024-01-01", "amount": 120.0}, {"date": "2024-01-02", "amount": 75.5}]})
+        {
+            "results": {
+                "daily_transactions": {"2024-01-01": 120.0, "2024-01-02": 75.5},
+                "weekly_transactions": {"2023-12-31": 195.5},
+                "monthly_transactions": {"2024-01-31": 195.5}
+            }
+        }
+    """
 
     # ROBUST CHECK
     if "error" in data:
@@ -141,31 +194,190 @@ def time_series_analysis(data: dict) -> dict:
     
     try:
         df = pd.DataFrame(data["data"])
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.dropna(subset=["date"]).set_index("date")
+
+        stat = {
+            "daily_transactions": df["amount"].resample("D").sum().to_dict(),
+            "weekly_transactions": df["amount"].resample("W").sum().to_dict(),
+            "monthly_transactions": df["amount"].resample("M").sum().to_dict()
+        }
+
+        return {"results": stat}
+
     except Exception as e:
         return {"error": f"Error opening the DataFrame: {str(e)}"}
 
 @tool
-def outlier_detection(data: dict) -> dict:
-    pass
+def outlier_detection(data: dict) -> list:
+    """
+    Detects anomalous transactions in financial data.
+    Flags transactions with unusually high or low amounts, and suspicious IP activity.
+
+    Args:
+        data (dict): A dictionary containing the transaction data.
+                     Must include an 'amount' column and an 'ip_address' column.
+
+    Returns:
+        dict: A dictionary with detected anomalies:
+              - "outliers": Transactions with anomalous amounts (based on IQR rule).
+              - "ip_outlier": IP addresses with unusually high transaction counts.
+              Returns {"error": "..."} if parsing or analysis fails.
+
+    Example:
+        >>> outlier_detection({"data": [{"amount": 5000, "ip_address": "192.168.1.10"}, {"amount": 50, "ip_address": "192.168.1.11"}]})
+        {
+            "results": {
+                "outliers": [{"amount": 5000, "ip_address": "192.168.1.10"}],
+                "ip_outlier": {"192.168.1.10": 1}
+            }
+        }
+    """
+
+    # ROBUST CHECK
+    if "error" in data:
+        return data
+    
+    try:
+        df = pd.DataFrame(data["data"])
+        outlier_results = {}
+
+        # get the outliers via z-score and iqr
+        q1 = df["amount"].quantile(0.25)
+        q3 = df["amount"].quantile(0.75)
+        iqr = q3-q1
+        outliers = df[(df["amount"] < q1 - 1.5 * iqr) | df["amount"] > q3 + 1.5 * iqr]
+        outlier_results["outliers"] = outliers.to_dict(orient="records")
+
+        # get ip outliers
+        ip_counts = df["ip_address"].value_counts()
+        threshold = ip_counts.mean() + 2 * ip_counts.std()
+        ip_outliers = ip_counts[ip_counts > threshold]
+        outlier_results["ip_outlier"] = ip_outliers.to_dict()
+
+        return {"results": outlier_results}
+
+    except Exception as e:
+        return {"error": f"Error defining data as a DataFrame: {str(e)}"}
 
 ## FRAUD DETECTION AGENT ##
 # GOAL: detect potential fraud form the data and output a list of suspicious transactions
 @tool
 def ml_fraud_model(data: dict) -> dict:
-    pass
+    """
+    Detects potential fraudulent transactions from input data.
+    
+    Args:
+        data (dict): Dictionary containing transaction data. Expected format:
+                     {"data": [ {feature1: val, feature2: val, ...}, ... ]}
+    
+    Returns:
+        dict: Original data with an added "fraud_score" or "fraud_flag" for each transaction.
+    """
+
+    # ROBUST CHECK 
+    if "error" in data:
+        return data
+    
+    try:
+        df = pd.DataFrame(data["data"])
+
+        # call an ml model to detect transaction fraud (ensemble learning)
+        iso = IsolationForest(contamination=0.01, random_state=42)  # using IsolationForest because the process will be unsupervised anomaly detection
+        df["fraud_score"] = iso.fit_predict(df.select_dtypes(include=np.number))
+        df["fraud_flag"] = df["fraud_score"].apply(lambda x: 1 if x == -1 else 0)
+
+        result = df.to_dict(orient="records")
+        return {"data": result}
+
+    except Exception as e:
+        return {"error": f"Error defining transaction data into DataFrame: {str(e)}"}
+    
 
 @tool
 def rule_based_checker(data: dict) -> dict:
-    pass
+    """
+    Flags suspicious transactions based on hard-coded rules:
+      - Amount exceeds a threshold
+      - Transactions from blacklisted accounts
+      - Unusual transaction hours
+    Returns a dictionary with flagged transactions.
+
+    Args:
+        data (dict): Dictionary with transaction data.
+
+    Returns:
+        dict: Contains "rule_flags" with flagged transaction details.
+    """
+    if "error" in data:
+        return data
+
+    try:
+        df = pd.DataFrame(data["data"])
+        df["rule_flag"] = 0
+
+        # rule 1: high-value transactions
+        df.loc[df["amount"] > 10000, "rule_flag"] = 1
+
+        # rule 2: blacklisted accounts
+        blacklist = ["12345", "99999"]
+        df.loc[df["account_id"].isin(blacklist), "rule_flag"] = 1
+
+        # rule 3: unusual hours (00:00 - 05:00)
+        df["hour"] = pd.to_datetime(df["date"], errors="coerce").dt.hour
+        df.loc[df["hour"].between(0, 5), "rule_flag"] = 1
+
+        return {"rule_flags": df.to_dict(orient="records")}
+    except Exception as e:
+        return {"error": f"Error in rule-based checking: {str(e)}"}
+
 
 @tool
 def graph_based_detection(data: dict) -> dict:  # finds rings/collusion
-    pass
+    """
+    Detects collusion or ring-based fraud by analyzing connections between accounts.
+    Constructs a simple graph from transactions (nodes=accounts, edges=shared metadata).
+    Flags groups of accounts with unusual interconnections.
+
+    Args:
+        data (dict): Dictionary with transaction data.
+
+    Returns:
+        dict: Contains "graph_flags" with suspicious account clusters.
+    """
+    if "error" in data:
+        return data
+
+    try:
+        import networkx as nx
+        df = pd.DataFrame(data["data"])
+        G = nx.Graph()
+
+        # add edges between accounts that share metadata (IP, merchant)
+        for _, row in df.iterrows():
+            accounts = [row["account_id"]]
+            meta = row.get("metadata", "")
+            if meta:
+                G.add_node(row["account_id"])
+                # connect accounts sharing metadata
+                shared = df[df["metadata"] == meta]["account_id"].tolist()
+                for a in shared:
+                    if a != row["account_id"]:
+                        G.add_edge(row["account_id"], a)
+
+        # find connected components (possible collusion rings)
+        suspicious_clusters = [list(c) for c in nx.connected_components(G) if len(c) > 1]
+
+        return {"graph_flags": suspicious_clusters}
+
+    except Exception as e:
+        return {"error": f"Error in graph-based detection: {str(e)}"}
+
 
 ## RISK ANALYSIS AGENT ##
 # GOAL: for each suspicious transaction define a risk score and output a structured risk report (TransactionID -> Risk Score -> Reason) seperate each value by comma
 @tool
-def risk_scorer(transaction: str) -> dict:
+def risk_scorer(transaction: str) -> dict:  # assign a risk score based on the transaction
     pass
 
 @tool
