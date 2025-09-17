@@ -27,12 +27,10 @@ supervisor_llm = llm  # the supervisor has no tools
 
 # define agent state
 class AgentState(TypedDict):
-    transaction_data_sources: list[str]  # there will be multiple sources
-    transaction_data: dict
-    fraud_data: list[str]
-    risk_report: dict
-
-
+    transaction_data_sources: list[str]  # there will be multiple sources (paths, utls, db connections, etc)
+    transaction_data: dict  # unified list of transaction records
+    fraud_data: list[str]  # flagged anomalies/vulnerabilities
+    risk_report: str  # final summary/report
 
 
 # define agents

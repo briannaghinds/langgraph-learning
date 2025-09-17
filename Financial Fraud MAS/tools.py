@@ -116,18 +116,33 @@ def statistical_summary(data: dict) -> dict:
 
         # define a description column
         stats["description"] = df.describe()
-
+        for col in df.select_dtypes(include=["number"]):
+            stats[col] = {
+                "mean": df[col].mean(),
+                "median": df[col].median(),
+                "standard_deviation": df[col].std(),
+                "sum": df[col].sum(),
+                "min": df[col].min(),
+                "max": df[col].max()
+            }
 
         return {"stats": stats}
-
-
-
+    
     except Exception as e:
         return {"error": f"Issue reading DataFrame object: {str(e)}"}
 
 @tool
 def time_series_analysis(data: dict) -> dict:
-    pass
+    """"""
+
+    # ROBUST CHECK
+    if "error" in data:
+        return data
+    
+    try:
+        df = pd.DataFrame(data["data"])
+    except Exception as e:
+        return {"error": f"Error opening the DataFrame: {str(e)}"}
 
 @tool
 def outlier_detection(data: dict) -> dict:
