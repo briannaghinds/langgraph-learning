@@ -97,3 +97,12 @@ Both produce a **final report + dashboard output**, but in *different domains*.
 * Hierarchical orchestration
 * Tool selection with `bind_tools`
 * Loops until completion
+
+### FRAUD SIGNALS
+⚠️ Fraud signals included from the data.
+
+Bank: duplicate high withdrawals (BTX1007 & BTX1008), sudden international location (Lagos).
+
+Credit Card: repeated luxury purchases in Dubai, “TestMerchant” with Unknown location.
+
+Online Payments: duplicate payments from same IP, large payment from suspicious IP.

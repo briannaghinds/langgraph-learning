@@ -1,0 +1,9 @@
+transaction_id,account_id,date,amount,type,location
+BTX1001,AC001,2025-01-03,2500,deposit,New York
+BTX1002,AC001,2025-01-04,-500,withdrawal,New York
+BTX1003,AC002,2025-01-04,-200,withdrawal,Chicago
+BTX1004,AC002,2025-01-05,-2000,withdrawal,Los Angeles
+BTX1005,AC003,2025-01-06,1500,deposit,Miami
+BTX1006,AC003,2025-01-06,-1500,withdrawal,Lagos
+BTX1007,AC004,2025-01-07,-5000,withdrawal,New York
+BTX1008,AC004,2025-01-07,-5000,withdrawal,New York
