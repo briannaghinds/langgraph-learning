@@ -15,25 +15,56 @@ import xgboost as xgb
 ## INGESTION AGENT TOOLS ##
 # GOAL: loops until it has a complete dataset (transactions, users, metadata)
 @tool
-def load_csv(datapath: str) -> dict:  # NOTE: need to fix because the csv files do not have the same column names
+def load_csv(datapath: str) -> dict:
     """
-    From a .csv define datapath, load the data into a Pandas DataFrame.
-    Returns the loaded dataset, or None if an error occurs.
-
-    Args
-        datapath: datapath value of where the .csv is
-    """
+    Loads a CSV file, normalizes column names, and returns a standardized dataset.
     
+    Args:
+        datapath (str): Path to the .csv file.
+    
+    Returns:
+        dict: {
+            "data": List of dict rows with normalized keys,
+            "columns": Standardized column names that were detected,
+            "original_columns": Original CSV column names
+        }
+    """
+
+    COLUMN_MAPPINGS = {
+        "amount": ["amount", "transaction_amount", "value", "amt"],
+        "date": ["date", "transaction_date", "timestamp", "time"],
+        "account_id": ["account_id", "acct_id", "user_id", "card_number"],
+        "ip_address": ["ip_address", "ip", "source_ip"],
+        "country": ["country", "location", "geo"]
+    }
+
     # ROBUST CHECK 
     if not os.path.exists(datapath):
         return {"error": f"Define filepath: {datapath}, does not exist. Check definition and try again."}
-    
-    df = pd.read_csv(datapath)
 
-    return {
-        "data": df.to_dict(orient="records"),
-        "columns": df.columns.tolist()
-    }
+    try:
+        df = pd.read_csv(datapath)
+        original_columns = df.columns.tolist()
+
+        # normalize column names
+        col_map = {}
+        for standard_name, aliases in COLUMN_MAPPINGS.items():
+            for alias in aliases:
+                if alias in df.columns:
+                    col_map[alias] = standard_name
+                    break  # stop at first match
+
+        df = df.rename(columns=col_map)
+
+        return {
+            "data": df.to_dict(orient="records"),
+            "columns": df.columns.tolist(),
+            "original_columns": original_columns
+        }
+
+    except Exception as e:
+        return {"error": f"Failed to load CSV: {str(e)}"}
+
 
 @tool
 def fetch_api(url: str) -> dict:
@@ -60,6 +91,7 @@ def fetch_api(url: str) -> dict:
             "source": url,
             "status": "failed"
         }
+
 
 @tool
 def query_database(db_path: str, query: str) -> dict:
@@ -94,6 +126,7 @@ def query_database(db_path: str, query: str) -> dict:
             "query": query,
             "status": "failed"
         }
+
 
 ## TRANSACTION ANALYSIS TOOLS ##
 # GOAL: parse the data for trends, anomalies, patterns and get a readable analysis report (tables, graphs, summaries)
@@ -158,6 +191,7 @@ def statistical_summary(data: dict) -> dict:
     except Exception as e:
         return {"error": f"Issue reading DataFrame object: {str(e)}"}
 
+
 @tool
 def time_series_analysis(data: dict) -> dict:
     """
@@ -207,6 +241,7 @@ def time_series_analysis(data: dict) -> dict:
 
     except Exception as e:
         return {"error": f"Error opening the DataFrame: {str(e)}"}
+
 
 @tool
 def outlier_detection(data: dict) -> list:
@@ -259,6 +294,7 @@ def outlier_detection(data: dict) -> list:
 
     except Exception as e:
         return {"error": f"Error defining data as a DataFrame: {str(e)}"}
+
 
 ## FRAUD DETECTION AGENT ##
 # GOAL: detect potential fraud form the data and output a list of suspicious transactions
@@ -377,12 +413,112 @@ def graph_based_detection(data: dict) -> dict:  # finds rings/collusion
 ## RISK ANALYSIS AGENT ##
 # GOAL: for each suspicious transaction define a risk score and output a structured risk report (TransactionID -> Risk Score -> Reason) seperate each value by comma
 @tool
-def risk_scorer(transaction: str) -> dict:  # assign a risk score based on the transaction
-    pass
+def risk_scorer(data: dict) -> dict:
+    """
+    Assigns a rule-based risk score to transactions.
+    
+    Args:
+        data (dict): Transaction dataset in the format:
+                     {"data": [ { "amount": ..., "ip_address": ..., "account_id": ..., "date": ...}, ... ]}
+    
+    Returns:
+        dict: Transactions with "risk_score" and "risk_reason".
+    """
+    if "error" in data:
+        return data
+
+    try:
+        df = pd.DataFrame(data["data"])
+        df["risk_score"] = 0
+        df["risk_reason"] = ""
+
+        for i, row in df.iterrows():
+            score = 0
+            reasons = []
+
+            # Rule 1: High-value transaction
+            if row.get("amount", 0) > 10000:
+                score += 40
+                reasons.append("High-value transaction")
+
+            # Rule 2: Blacklisted account
+            if row.get("account_id") in ["12345", "99999"]:
+                score += 30
+                reasons.append("Blacklisted account")
+
+            # Rule 3: Unusual hours (00:00 - 05:00)
+            if "date" in row and pd.notnull(row["date"]):
+                hour = pd.to_datetime(row["date"], errors="coerce").hour
+                if hour in range(0, 6):
+                    score += 20
+                    reasons.append("Unusual transaction time")
+
+            # Rule 4: IP flagged (example suspicious IPs)
+            if row.get("ip_address") in ["192.168.1.10", "10.0.0.99"]:
+                score += 25
+                reasons.append("Suspicious IP address")
+
+            # Cap score at 100
+            score = min(score, 100)
+
+            df.at[i, "risk_score"] = score
+            df.at[i, "risk_reason"] = ", ".join(reasons) if reasons else "Normal"
+
+        return {"risk_report": df.to_dict(orient="records")}
+
+    except Exception as e:
+        return {"error": f"Error scoring transaction risk: {str(e)}"}
+
 
 @tool
-def regulatory_checker():
-    pass
+def regulatory_checker(data: dict) -> dict:
+    """
+    Checks transactions for potential regulatory compliance issues (AML/KYC).
+    
+    Args:
+        data (dict): Transaction dataset in the format:
+                     {"data": [ { "amount": ..., "account_id": ..., "country": ..., "date": ...}, ... ]}
+    
+    Returns:
+        dict: Flags for regulatory concerns:
+              - "aml_flags": High-value transactions above reporting threshold.
+              - "structuring_flags": Accounts breaking large sums into smaller transactions.
+              - "blacklist_flags": Accounts or countries on a watchlist.
+    """
+    if "error" in data:
+        return data
+
+    try:
+        df = pd.DataFrame(data["data"])
+        flags = {
+            "aml_flags": [],
+            "structuring_flags": [],
+            "blacklist_flags": []
+        }
+
+        # Rule 1: AML threshold (e.g., > 10,000 must be reported)
+        aml_threshold = 10000
+        aml_cases = df[df["amount"] > aml_threshold]
+        flags["aml_flags"] = aml_cases.to_dict(orient="records")
+
+        # Rule 2: Structuring (multiple small transactions adding up > threshold in one day)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+        daily_totals = df.groupby(["account_id", "date"])["amount"].sum().reset_index()
+        structuring_cases = daily_totals[daily_totals["amount"] > aml_threshold]
+        flags["structuring_flags"] = structuring_cases.to_dict(orient="records")
+
+        # Rule 3: Blacklisted accounts/countries
+        blacklist_accounts = ["12345", "99999"]
+        blacklist_countries = ["IR", "KP"]
+        blacklisted = df[(df["account_id"].isin(blacklist_accounts)) | 
+                         (df.get("country", "").isin(blacklist_countries))]
+        flags["blacklist_flags"] = blacklisted.to_dict(orient="records")
+
+        return {"regulatory_report": flags}
+
+    except Exception as e:
+        return {"error": f"Error in regulatory check: {str(e)}"}
+
 
 ## SUPERVISOR AGENT TOOLS ##
 # GOAL: combines the fraud and risk report and exports it into a PDF compilance report and JSON dashboard data
