@@ -3,7 +3,7 @@
 Description: Agent definitions, graph initialization, and main run of the Financial Fraud MAS.
 """
 
-# --- Imports ---
+# import libraries
 import os
 import json
 import time
@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 from typing import TypedDict, Annotated
 import operator
 from tools import *
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import AIMessage
 from IPython.display import Image, display
 
-# --- Load API Key & LLM ---
+# get API key from .env file
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("G_API_TOKEN")
 llm = ChatGoogleGenerativeAI(
@@ -24,21 +24,21 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=GOOGLE_API_KEY
 )
 
-# --- Prompts ---
+# define system prompts per agent
 INGESTION_PROMPT = """Ingest all sources from transaction_data_sources into transaction_data."""
 TRANSACTION_ANALYSIS_PROMPT = """Analyze transactions for trends, anomalies, and outliers."""
 FRAUD_DETECTION_PROMPT = """Detect fraud and return only JSON list of flagged transactions."""
 RISK_ANALYSIS_PROMPT = """Assign risk scores and perform compliance checks. Return JSON list."""
 SUPERVISOR_PROMPT = """Combine all results into a final structured risk report."""
 
-# --- Bind Tools ---
+# bind tools and prompts to each agent
 ingestion_llm = llm.bind_tools([load_csv, fetch_api, query_database], system_prompt=INGESTION_PROMPT, return_direct=True)
 transaction_analysis_llm = llm.bind_tools([statistical_summary, time_series_analysis, outlier_detection], system_prompt=TRANSACTION_ANALYSIS_PROMPT, return_direct=True)
 fraud_detection_llm = llm.bind_tools([ml_fraud_model, rule_based_checker, graph_based_detection], system_prompt=FRAUD_DETECTION_PROMPT, return_direct=True)
 risk_classification_llm = llm.bind_tools([risk_scorer, regulatory_checker], system_prompt=RISK_ANALYSIS_PROMPT, return_direct=True)
-supervisor_llm = llm
+supervisor_llm = llm  # no tools needed
 
-# --- Agent State ---
+# define agent state
 class AgentState(TypedDict):
     transaction_data_sources: Annotated[list[str], operator.add]
     transaction_data: Annotated[dict, operator.or_]              # raw + analysis
@@ -46,7 +46,7 @@ class AgentState(TypedDict):
     risk_report: Annotated[list[dict], operator.add]             # scored suspicious transactions
     final_report: Annotated[dict, operator.or_]                  # final combined JSON
 
-# --- Parser for AIMessage ---
+# parser for AI messagea
 def parse_llm_response(response) -> list[dict]:
     if isinstance(response, AIMessage):
         if response.content.strip():
@@ -73,7 +73,7 @@ def parse_llm_response(response) -> list[dict]:
     return []
 
 
-# --- Agent Functions ---
+## AGENTS ##
 def ingestion_agent(state: AgentState) -> AgentState:
     """Load CSV/API/DB into transaction_data."""
     all_data = []
@@ -227,9 +227,9 @@ def supervisor_agent(state: AgentState) -> AgentState:
     }
 
     return state
+####
 
-
-# --- Build Graph ---
+# initialize and build graph
 workflow = StateGraph(AgentState)
 workflow.add_node("ingestion", ingestion_agent)
 workflow.add_node("transaction_analysis", transaction_analysis_agent)
@@ -246,12 +246,12 @@ workflow.set_entry_point("ingestion")
 
 fraud_detector = workflow.compile()
 
-# --- Visualize ---
+## GRAPH VISUALIZE ##
 display(Image(fraud_detector.get_graph().draw_mermaid_png()))
 with open("fraud_detector_graph.png", "wb") as f:
     f.write(fraud_detector.get_graph().draw_mermaid_png())
+####
 
-# --- Run ---
 if __name__ == "__main__":
     start = time.time()
     initial_state = {
