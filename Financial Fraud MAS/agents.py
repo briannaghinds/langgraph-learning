@@ -124,12 +124,12 @@ def fraud_detection_agent(state: AgentState) -> AgentState:
         risk_score = 0
         reasons = []
 
-        # High amount thresholds (example)
+        # threshold amount
         if txn.get("amount", 0) > 2000:
             risk_score += 0.7
             reasons.append("High amount transaction")
 
-        # Duplicate same-day transaction
+        # flag same day transactions
         duplicates = [
             t for t in transactions
             if t.get("account_id") == txn.get("account_id")
@@ -141,7 +141,7 @@ def fraud_detection_agent(state: AgentState) -> AgentState:
             risk_score += 0.8
             reasons.append("Duplicate transaction same day")
 
-        # Foreign location
+        # flag unknown locations
         known_locations = {"AC001": ["New York"], "AC002": ["Chicago","Los Angeles"], 
                            "AC003": ["Miami","Lagos"], "AC004": ["New York"]}
         if txn.get("country") and txn.get("account_id") in known_locations:
@@ -168,9 +168,10 @@ def risk_analysis_agent(state: AgentState) -> AgentState:
     fraud_data = state.get("fraud_data", [])
     risk_report = {}
 
+    # for each transaction in the fraud data
     for txn in fraud_data:
-        acct = txn["account_id"]
-        if acct not in risk_report:
+        acct = txn["account_id"]  # group by account_id
+        if acct not in risk_report:  # count the amount of flagged transactions
             risk_report[acct] = {"total_flagged": 0, "transactions": []}
         risk_report[acct]["total_flagged"] += 1
         risk_report[acct]["transactions"].append(txn)
@@ -183,7 +184,7 @@ def risk_analysis_agent(state: AgentState) -> AgentState:
 def supervisor_agent(state: AgentState) -> AgentState:
     """Combine all results into final report with JSON and human-readable summary."""
     
-    # --- Deduplicate fraud_data ---
+    # clean the analysis of any duplicate data
     seen = set()
     clean_fraud = []
     for tx in state.get("fraud_data", []):
@@ -196,7 +197,7 @@ def supervisor_agent(state: AgentState) -> AgentState:
     
     state["fraud_data"] = clean_fraud
 
-    # --- Flatten transaction analysis ---
+    # flatten the nested data keys
     transactions = state.get("transaction_data", {})
     if "analysis" in transactions:
         analysis = transactions["analysis"]
@@ -205,7 +206,7 @@ def supervisor_agent(state: AgentState) -> AgentState:
         transactions["analysis"] = analysis
     state["transaction_data"] = transactions
 
-    # --- Build human-readable summary ---
+    # build human readable summary from the agent's analysis
     summary_lines = []
     for account_summary in state.get("risk_report", []):
         account_id = account_summary.get("account_id", "Unknown")
@@ -216,7 +217,7 @@ def supervisor_agent(state: AgentState) -> AgentState:
                 f"  - {tx['transaction_id']} | Amount: {tx['amount']} | Date: {tx['date']} | Risk: {tx['risk_score']} | Reasons: {', '.join(tx['reasons'])}"
             )
 
-    # --- Final combined report ---
+    # the final report contains 2 types: json (for dashboard) and normal text (for a financial analyst)
     state["final_report"] = {
         "json_report": {
             "transactions": state.get("transaction_data", {}),
