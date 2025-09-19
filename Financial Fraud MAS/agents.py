@@ -3,7 +3,7 @@
 Description: Agent definitions, graph initialization, and main run of the Financial Fraud MAS.
 """
 
-# import libraries
+# --- Imports ---
 import os
 import json
 import time
@@ -16,9 +16,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import AIMessage
 from IPython.display import Image, display
 
-# -----------------------------
-# Load API Key and initialize LLM
-# -----------------------------
+# --- Load API Key & LLM ---
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("G_API_TOKEN")
 llm = ChatGoogleGenerativeAI(
@@ -26,68 +24,37 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=GOOGLE_API_KEY
 )
 
-# -----------------------------
-# Prompts
-# -----------------------------
-INGESTION_PROMPT = """
-You are the ingestion agent. Your task is to gather transaction data from all sources in 'transaction_data_sources'.
-Do not stop until all sources are loaded into 'transaction_data'. Return only the updated data in the specified format.
-"""
+# --- Prompts ---
+INGESTION_PROMPT = """Ingest all sources from transaction_data_sources into transaction_data."""
+TRANSACTION_ANALYSIS_PROMPT = """Analyze transactions for trends, anomalies, and outliers."""
+FRAUD_DETECTION_PROMPT = """Detect fraud and return only JSON list of flagged transactions."""
+RISK_ANALYSIS_PROMPT = """Assign risk scores and perform compliance checks. Return JSON list."""
+SUPERVISOR_PROMPT = """Combine all results into a final structured risk report."""
 
-TRANSACTION_ANALYSIS_PROMPT = """
-Analyze transaction data for trends, anomalies, and patterns.
-Return a structured summary of statistical and time series analysis, including outliers.
-"""
-
-FRAUD_DETECTION_PROMPT = """
-Detect potentially fraudulent transactions using ML models, rule-based checks, and graph-based analysis.
-Add flags and scores to each transaction where necessary.
-Return JSON array of flagged transactions.
-"""
-
-RISK_ANALYSIS_PROMPT = """
-Assign risk scores to suspicious transactions and perform regulatory checks.
-Return a combined 'risk_report' for all transactions.
-"""
-
-SUPERVISOR_PROMPT = """
-Combine the results from all agents into a final risk report.
-Export as JSON and prepare for PDF output if needed.
-"""
-
-# -----------------------------
-# Bind LLM tools to agents
-# -----------------------------
+# --- Bind Tools ---
 ingestion_llm = llm.bind_tools([load_csv, fetch_api, query_database], system_prompt=INGESTION_PROMPT, return_direct=True)
 transaction_analysis_llm = llm.bind_tools([statistical_summary, time_series_analysis, outlier_detection], system_prompt=TRANSACTION_ANALYSIS_PROMPT, return_direct=True)
 fraud_detection_llm = llm.bind_tools([ml_fraud_model, rule_based_checker, graph_based_detection], system_prompt=FRAUD_DETECTION_PROMPT, return_direct=True)
 risk_classification_llm = llm.bind_tools([risk_scorer, regulatory_checker], system_prompt=RISK_ANALYSIS_PROMPT, return_direct=True)
-supervisor_llm = llm  # supervisor does not use tools
+supervisor_llm = llm
 
-# -----------------------------
-# Agent State Definition
-# -----------------------------
+# --- Agent State ---
 class AgentState(TypedDict):
     transaction_data_sources: Annotated[list[str], operator.add]
-    transaction_data: Annotated[dict, operator.or_]
-    fraud_data: Annotated[list[dict], operator.add]
-    risk_report: Annotated[list[dict], operator.add]
-    final_report: Annotated[dict, operator.or_]
+    transaction_data: Annotated[dict, operator.or_]              # raw + analysis
+    fraud_data: Annotated[list[dict], operator.add]              # suspicious transactions
+    risk_report: Annotated[list[dict], operator.add]             # scored suspicious transactions
+    final_report: Annotated[dict, operator.or_]                  # final combined JSON
 
-# -----------------------------
-# Helper: Robust LLM response parsing
-# -----------------------------
-def parse_llm_response(response) -> list:
-    """Parse AIMessage or dict response robustly to return a list of dicts."""
+# --- Parser for AIMessage ---
+def parse_llm_response(response) -> list[dict]:
     if isinstance(response, AIMessage):
-        # First, try content
         if response.content.strip():
             try:
                 parsed = json.loads(response.content)
                 return parsed if isinstance(parsed, list) else [parsed]
             except:
                 pass
-        # fallback: function_call arguments
         func_args = response.additional_kwargs.get("function_call", {}).get("arguments")
         if func_args:
             try:
@@ -96,14 +63,19 @@ def parse_llm_response(response) -> list:
             except:
                 pass
     elif isinstance(response, dict):
-        return response.get("data") or response.get("risk_report") or []
+        # Flatten nested {"data": {"data": []}}
+        if "data" in response:
+            inner = response["data"]
+            if isinstance(inner, dict) and "data" in inner:
+                return inner["data"]
+            return inner if isinstance(inner, list) else [inner]
+
     return []
 
-# -----------------------------
-# Define Agents
-# -----------------------------
+
+# --- Agent Functions ---
 def ingestion_agent(state: AgentState) -> AgentState:
-    """Ingest transaction data from CSV, API, or DB sources."""
+    """Load CSV/API/DB into transaction_data."""
     all_data = []
     for source in state.get("transaction_data_sources", []):
         if source.endswith(".csv"):
@@ -122,53 +94,142 @@ def ingestion_agent(state: AgentState) -> AgentState:
     return state
 
 def transaction_analysis_agent(state: AgentState) -> AgentState:
-    """Analyze transaction trends, anomalies, and patterns."""
     data = state.get("transaction_data", {})
     response = transaction_analysis_llm.invoke(
-        f"Analyze this transaction dataset for statistics, time series, and outliers. Here is the data: {data}"
+        f"Analyze this transaction dataset. Here is the data: {data}"
     )
-    state["transaction_data"]["analysis"] = response
+
+    # Extract function_call args only, not the raw AIMessage
+    if isinstance(response, AIMessage):
+        func_args = response.additional_kwargs.get("function_call", {}).get("arguments")
+        if func_args:
+            try:
+                state["transaction_data"]["analysis"] = json.loads(func_args)
+            except:
+                state["transaction_data"]["analysis"] = func_args
+        else:
+            state["transaction_data"]["analysis"] = response.content
+    else:
+        state["transaction_data"]["analysis"] = str(response)
+
     return state
+
 
 def fraud_detection_agent(state: AgentState) -> AgentState:
-    """Detect potentially fraudulent transactions."""
-    data = {"data": state.get("transaction_data", {}).get("data", [])}
-    response = fraud_detection_llm.invoke(
-        f"Run fraud detection and return ONLY JSON array of flagged transactions. Here is the data: {data}"
-    )
-    parsed = parse_llm_response(response)
-    state["fraud_data"] = parsed
+    """Detect potentially fraudulent transactions using rules-based logic."""
+    transactions = state.get("transaction_data", {}).get("data", [])
+    fraud_data = []
+
+    for txn in transactions:
+        risk_score = 0
+        reasons = []
+
+        # High amount thresholds (example)
+        if txn.get("amount", 0) > 2000:
+            risk_score += 0.7
+            reasons.append("High amount transaction")
+
+        # Duplicate same-day transaction
+        duplicates = [
+            t for t in transactions
+            if t.get("account_id") == txn.get("account_id")
+            and t.get("date") == txn.get("date")
+            and t.get("amount") == txn.get("amount")
+            and t.get("transaction_id") != txn.get("transaction_id")
+        ]
+        if duplicates:
+            risk_score += 0.8
+            reasons.append("Duplicate transaction same day")
+
+        # Foreign location
+        known_locations = {"AC001": ["New York"], "AC002": ["Chicago","Los Angeles"], 
+                           "AC003": ["Miami","Lagos"], "AC004": ["New York"]}
+        if txn.get("country") and txn.get("account_id") in known_locations:
+            if txn["country"] not in known_locations[txn["account_id"]]:
+                risk_score += 0.6
+                reasons.append("Foreign location detected")
+
+        if risk_score > 0:
+            fraud_data.append({
+                "transaction_id": txn.get("transaction_id"),
+                "account_id": txn.get("account_id"),
+                "amount": txn.get("amount"),
+                "date": txn.get("date"),
+                "risk_score": round(risk_score, 2),
+                "reasons": reasons
+            })
+
+    state["fraud_data"] = fraud_data
     return state
+
 
 def risk_analysis_agent(state: AgentState) -> AgentState:
-    """Assign risk scores and perform compliance checks."""
-    fraud_data = state.get("fraud_data") or []
-    data = {"data": fraud_data}
-    response = risk_classification_llm.invoke(
-        f"Analyze this transaction dataset, assign risk scores and perform compliance checks. Return a JSON array of objects. Here is the data: {data}"
-    )
-    parsed = parse_llm_response(response)
-    if isinstance(parsed, list):
-        state["risk_report"] = parsed
-    elif isinstance(parsed, dict) and "risk_report" in parsed:
-        state["risk_report"] = parsed["risk_report"]
-    else:
-        state["risk_report"] = []
+    """Aggregate flagged transactions into per-account risk summary."""
+    fraud_data = state.get("fraud_data", [])
+    risk_report = {}
+
+    for txn in fraud_data:
+        acct = txn["account_id"]
+        if acct not in risk_report:
+            risk_report[acct] = {"total_flagged": 0, "transactions": []}
+        risk_report[acct]["total_flagged"] += 1
+        risk_report[acct]["transactions"].append(txn)
+
+    # Convert dict to list for consistency with previous LLM output
+    state["risk_report"] = [{"account_id": k, **v} for k,v in risk_report.items()]
     return state
+
 
 def supervisor_agent(state: AgentState) -> AgentState:
-    """Combine all results into a final report."""
-    final_report = {
-        "transactions": state.get("transaction_data", {}),
-        "fraud_data": state.get("fraud_data", []),
-        "risk_report": state.get("risk_report", [])
+    """Combine all results into final report with JSON and human-readable summary."""
+    
+    # --- Deduplicate fraud_data ---
+    seen = set()
+    clean_fraud = []
+    for tx in state.get("fraud_data", []):
+        tx_key = tx.get("transaction_id") or tx.get("payment_id") or f"{tx['account_id']}_{tx['date']}_{tx['amount']}"
+        if tx_key not in seen:
+            seen.add(tx_key)
+            if "transaction_id" not in tx:
+                tx["transaction_id"] = tx.get("payment_id", tx_key)
+            clean_fraud.append(tx)
+    
+    state["fraud_data"] = clean_fraud
+
+    # --- Flatten transaction analysis ---
+    transactions = state.get("transaction_data", {})
+    if "analysis" in transactions:
+        analysis = transactions["analysis"]
+        while isinstance(analysis, dict) and "data" in analysis:
+            analysis = analysis["data"]
+        transactions["analysis"] = analysis
+    state["transaction_data"] = transactions
+
+    # --- Build human-readable summary ---
+    summary_lines = []
+    for account_summary in state.get("risk_report", []):
+        account_id = account_summary.get("account_id", "Unknown")
+        total = account_summary.get("total_flagged", 0)
+        summary_lines.append(f"Account {account_id} has {total} flagged transactions:")
+        for tx in account_summary.get("transactions", []):
+            summary_lines.append(
+                f"  - {tx['transaction_id']} | Amount: {tx['amount']} | Date: {tx['date']} | Risk: {tx['risk_score']} | Reasons: {', '.join(tx['reasons'])}"
+            )
+
+    # --- Final combined report ---
+    state["final_report"] = {
+        "json_report": {
+            "transactions": state.get("transaction_data", {}),
+            "fraud_data": state.get("fraud_data", []),
+            "risk_report": state.get("risk_report", [])
+        },
+        "readable_report": "\n".join(summary_lines)
     }
-    state["final_report"] = final_report
+
     return state
 
-# -----------------------------
-# Initialize Graph and Nodes
-# -----------------------------
+
+# --- Build Graph ---
 workflow = StateGraph(AgentState)
 workflow.add_node("ingestion", ingestion_agent)
 workflow.add_node("transaction_analysis", transaction_analysis_agent)
@@ -176,28 +237,23 @@ workflow.add_node("fraud_detector", fraud_detection_agent)
 workflow.add_node("risk_analysis", risk_analysis_agent)
 workflow.add_node("supervisor", supervisor_agent)
 
-# build edges
 workflow.add_edge("ingestion", "transaction_analysis")
 workflow.add_edge("transaction_analysis", "fraud_detector")
 workflow.add_edge("fraud_detector", "risk_analysis")
-workflow.add_edge("transaction_analysis", "risk_analysis")  # parallel line
+workflow.add_edge("transaction_analysis", "risk_analysis")
 workflow.add_edge("risk_analysis", "supervisor")
 workflow.set_entry_point("ingestion")
 
 fraud_detector = workflow.compile()
 
-# visualize graph
+# --- Visualize ---
 display(Image(fraud_detector.get_graph().draw_mermaid_png()))
-png_bytes = fraud_detector.get_graph().draw_mermaid_png()
 with open("fraud_detector_graph.png", "wb") as f:
-    f.write(png_bytes)
+    f.write(fraud_detector.get_graph().draw_mermaid_png())
 
-# -----------------------------
-# MAIN
-# -----------------------------
+# --- Run ---
 if __name__ == "__main__":
     start = time.time()
-
     initial_state = {
         "transaction_data_sources": [
             "./Financial Fraud MAS/data/bank_transactions.csv",
@@ -211,5 +267,9 @@ if __name__ == "__main__":
     }
 
     result = fraud_detector.invoke(initial_state)
-    print("FINAL REPORT:", json.dumps(result.get("final_report", {}), indent=2))
-    print(f"Process took {time.time() - start:.2f} seconds to run.")
+    print(json.dumps(result["final_report"], indent=2))
+    print(f"Process took {time.time() - start:.2f} seconds")
+
+    # adding the readable report into a txt file
+    with open("./Financial Fraud MAS/financial_MAS.txt", "w") as f:
+        f.write(result["final_report"]["readable_report"])

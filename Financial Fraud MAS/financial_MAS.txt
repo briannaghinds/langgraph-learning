@@ -1,0 +1,12 @@
+Account AC001 has 1 flagged transactions:
+  - BTX1001 | Amount: 2500 | Date: 2025-01-03 | Risk: 0.7 | Reasons: High amount transaction
+Account AC004 has 2 flagged transactions:
+  - BTX1007 | Amount: -5000 | Date: 2025-01-07 | Risk: 0.8 | Reasons: Duplicate transaction same day
+  - BTX1008 | Amount: -5000 | Date: 2025-01-07 | Risk: 0.8 | Reasons: Duplicate transaction same day
+Account 4333333333333333 has 2 flagged transactions:
+  - CCX2004 | Amount: 3000 | Date: 2025-02-03 | Risk: 0.7 | Reasons: High amount transaction
+  - CCX2007 | Amount: 2999 | Date: 2025-02-03 | Risk: 0.7 | Reasons: High amount transaction
+Account 4111111111111111 has 1 flagged transactions:
+  - CCX2006 | Amount: 5000 | Date: 2025-02-03 | Risk: 0.7 | Reasons: High amount transaction
+Account U005 has 1 flagged transactions:
+  - None | Amount: 10000 | Date: 2025-03-13 | Risk: 0.7 | Reasons: High amount transaction
